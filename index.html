@@ -119,12 +119,12 @@
             margin: 0;
         }
 
-        /* Side Navigation Drawer */
+        /* Side Navigation Drawer (Updated size for reporting room) */
         .side-menu {
             position: absolute;
             top: 0;
             left: -100%; 
-            width: 90%;
+            width: 92%;
             height: 100%;
             background: var(--card-bg);
             box-shadow: 5px 0 15px rgba(0,0,0,0.2);
@@ -174,7 +174,6 @@
             margin-bottom: 8px;
         }
 
-        /* Dashboard Graph Elements */
         .analytics-card {
             background: var(--box-bg);
             border: 1px solid var(--border-color);
@@ -210,6 +209,14 @@
             font-size: 0.9rem;
             padding: 10px;
             margin-top: 15px;
+        }
+
+        .btn-retro {
+            background-color: #e67e22;
+            color: white;
+            font-size: 0.85rem;
+            padding: 10px;
+            margin-top: 5px;
         }
 
         .tip-box {
@@ -326,7 +333,6 @@
         .btn-add { background-color: #3498db; color: white; }
         .btn-reset { background-color: #95a5a6; color: white; margin-top: 15px; font-size: 0.85rem; padding: 8px; }
         
-        /* Permanent Home Panel Mission Styling */
         .home-about-footer {
             margin-top: 20px;
             padding-top: 15px;
@@ -347,6 +353,42 @@
         <button class="menu-close-btn" onclick="toggleMenu()">✕</button>
         
         <div class="menu-content">
+            
+            <div class="menu-section" style="background: var(--box-bg); padding: 12px; border-radius: 12px; border: 1px dashed var(--primary); margin-bottom: 20px;">
+                <h3 style="border:none; margin-bottom:10px; color: var(--text-yellow);">🕰 Log Past Intake</h3>
+                <p style="font-size:0.8rem; margin-bottom:10px;">Missed a log yesterday or earlier today? Backdate it here to keep clinical spreadsheet ledgers continuous.</p>
+                
+                <div class="input-group inline-group">
+                    <div>
+                        <label for="retroDate">Select Date</label>
+                        <input type="date" id="retroDate">
+                    </div>
+                    <div>
+                        <label for="retroTime">Select Time</label>
+                        <input type="time" id="retroTime">
+                    </div>
+                </div>
+
+                <div class="input-group inline-group" style="margin-top: 8px;">
+                    <div>
+                        <label for="retroIn">Amount (oz)</label>
+                        <input type="number" id="retroIn" placeholder="e.g. 7.5" step="0.1">
+                    </div>
+                    <div>
+                        <label for="retroBeverageType">Beverage Type</label>
+                        <select id="retroBeverageType">
+                            <option value="water">Pure Water</option>
+                            <option value="coffee">Black Coffee</option>
+                            <option value="cola">Standard Dark Soda</option>
+                            <option value="sports">Sports Drink</option>
+                            <option value="orangeJuice">Orange Juice</option>
+                            <option value="milk">Milk (1% Cow)</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn-retro" onclick="logRetroIntake()">+ Save Past Log</button>
+            </div>
+
             <div class="menu-section">
                 <h3>Doctor Report Dashboard</h3>
                 <p>Proportional profile breakdown of cumulative tracked fluids across history registers:</p>
@@ -377,16 +419,10 @@
             </div>
 
             <div class="menu-section">
-                <h3>General Use</h3>
-                <p><u>1. Target Framework:</u> Adjust manual caps anytime. Memory locks values across application cycles.</p>
-                <p><u>2. Run Logs:</u> Capture decimal entry values. System updates dashboard charts instantly.</p>
-            </div>
-
-            <div class="menu-section">
                 <h3>Version Details</h3>
-                <p><strong>Current Build:</strong> Version 5.1</p>
-                <p><strong>Last Updated:</strong> June 25, 2026</p>
-                <p><strong>Sprint Summary:</strong> Restored core mission architecture directly to the parent screen layout frame for heightened patient visual support.</p>
+                <p><strong>Current Build:</strong> Version 6.0</p>
+                <p><strong>Last Updated:</strong> June 27, 2026</p>
+                <p><strong>Sprint Summary:</strong> Added a Retroactive Logging subsystem with cross-day timestamp sorting validation filters to guarantee audit log continuity.</p>
             </div>
         </div>
     </div>
@@ -493,6 +529,11 @@
         if (savedLedger) {
             historicalLedger = JSON.parse(savedLedger);
         }
+
+        // Initialize Retro Forms to default to right now local clock settings
+        const todayLocal = new Date();
+        document.getElementById('retroDate').value = todayLocal.toISOString().split('T')[0];
+        document.getElementById('retroTime').value = todayLocal.toTimeString().substring(0,5);
 
         const todayStr = new Date().toDateString();
         const savedLogDate = localStorage.getItem('lastLogDate');
@@ -680,16 +721,71 @@
         updateDisplay();
     }
 
+    // NEW BACKDATING ACTION MACHINE
+    function logRetroIntake() {
+        const retroAmountInput = document.getElementById('retroIn');
+        const amount = parseFloat(retroAmountInput.value);
+        const inputDate = document.getElementById('retroDate').value;
+        const inputTime = document.getElementById('retroTime').value;
+
+        if (isNaN(amount) || amount <= 0 || !inputDate || !inputTime) {
+            alert("Please input a valid amount, date, and time.");
+            return;
+        }
+
+        const type = document.getElementById('retroBeverageType').value;
+        const nutrients = beverageData[type];
+
+        // Format raw time back to user friendly clean format (e.g. "02:30 PM")
+        const timeSplit = inputTime.split(':');
+        let hours = parseInt(timeSplit[0]);
+        let minutes = timeSplit[1];
+        let ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12;
+        hours = hours ? hours : 12; // convert 0 to 12
+        const structuredTimeStr = `${hours.toString().padStart(2, '0')}:${minutes} ${ampm}`;
+
+        // Create the receipt row
+        const logEntryReceipt = {
+            date: inputDate,
+            time: structuredTimeStr,
+            beverageName: nutrients.name,
+            beverageKey: type,
+            volumeOz: amount,
+            sodiumMg: Math.round(nutrients.sodium * amount),
+            potassiumMg: Math.round(nutrients.potassium * amount),
+            phosphorusMg: Math.round(nutrients.phosphorus * amount),
+            caffeineMg: Math.round(nutrients.caffeine * amount)
+        };
+
+        historicalLedger.push(logEntryReceipt);
+
+        // Sort the entire book log chronologically by date and time automatically
+        historicalLedger.sort((a, b) => new Date(a.date + ' ' + a.time) - new Date(b.date + ' ' + b.time));
+
+        // CRITICAL CHECK: If the retroactive entry is for TODAY, update the main dashboards
+        const todayLocalStr = new Date().toLocaleDateString('sv-SE'); // Formats to standard local YYYY-MM-DD
+        if (inputDate === todayLocalStr) {
+            totalIntake += amount;
+            totalSodium += (nutrients.sodium * amount);
+            totalPotassium += (nutrients.potassium * amount);
+            totalPhosphorus += (nutrients.phosphorus * amount);
+            totalCaffeine += (nutrients.caffeine * amount);
+        }
+
+        retroAmountInput.value = '';
+        saveCurrentDataToStorage();
+        updateDisplay();
+        recalculateAnalyticsDashboard();
+        alert("Past log entry successfully synchronized to master register book!");
+    }
+
     function recalculateAnalyticsDashboard() {
         document.getElementById('reportTotalEntries').innerText = historicalLedger.length;
         
         if (historicalLedger.length === 0) return;
 
-        let totalWaterVol = 0;
-        let totalSodaVol = 0;
-        let totalOtherVol = 0;
-        let totalLedgerVol = 0;
-
+        let totalWaterVol = 0; let totalSodaVol = 0; let totalOtherVol = 0; let totalLedgerVol = 0;
         let uniqueDatesMap = {};
         let grandSod = 0; let grandPot = 0; let grandPhos = 0;
 
